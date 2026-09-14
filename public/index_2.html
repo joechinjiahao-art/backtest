@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Quant Backtesting & Strategy Suite</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    :root {
+      --bg-dark: #0f172a;
+      --card-bg: #1e293b;
+      --card-inner: #0b1329;
+      --accent-blue: #38bdf8;
+      --accent-green: #22c55e;
+      --accent-red: #ef4444;
+      --accent-purple: #c084fc;
+      --accent-amber: #f59e0b;
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --border-color: #334155;
+    }
+
+    body {
+      margin: 0;
+      padding: 20px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background-color: var(--bg-dark);
+      color: var(--text-main);
+    }
+
+    .section-card {
+      background: var(--card-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 20px;
+      margin-bottom: 24px;
+    }
+
+    .grid-form {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+
+    label {
+      display: block;
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      margin-bottom: 6px;
+    }
+
+    input[type="text"], input[type="number"], select, button {
+      width: 100%;
+      padding: 10px;
+      background: #0f172a;
+      border: 1px solid var(--border-color);
+      border-radius: 4px;
+      color: #fff;
+      box-sizing: border-box;
+    }
+
+    button {
+      background: #0284c7;
+      color: white;
+      font-weight: 600;
+      cursor: pointer;
+      border: none;
+    }
+
+    button:hover { background: #0369a1; }
+
+    /* 4-Column Indicator Selection Grid */
+    .indicator-columns {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 16px;
+      margin-top: 16px;
+      margin-bottom: 20px;
+    }
+
+    .ind-col {
+      background: var(--card-inner);
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      padding: 14px;
+    }
+
+    .ind-col-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid var(--border-color);
+      padding-bottom: 8px;
+      margin-bottom: 8px;
+    }
+
+    .ind-col-header h3 {
+      margin: 0;
+      font-size: 0.9rem;
+      font-weight: 600;
+    }
+
+    .ind-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .ind-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: rgba(15, 23, 42, 0.6);
+      padding: 8px 10px;
+      border-radius: 4px;
+      border: 1px solid rgba(51, 65, 85, 0.4);
+      font-size: 0.8rem;
+      cursor: pointer;
+    }
+
+    .ind-item input[type="checkbox"] {
+      width: auto;
+      cursor: pointer;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 12px;
+      font-size: 0.85rem;
+    }
+
+    th, td {
+      border: 1px solid var(--border-color);
+      padding: 10px;
+      text-align: left;
+    }
+
+    th { background: #0f172a; color: var(--accent-blue); }
+
+    .chart-container {
+      position: relative;
+      height: 380px;
+      width: 100%;
+      margin-top: 16px;
+    }
+
+    .badge {
+      font-size: 0.75rem;
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+    .badge-green { background: #15803d; color: white; }
+    .badge-blue { background: #0369a1; color: white; }
+
+    .code-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+
+    textarea {
+      width: 100%;
+      height: 220px;
+      background: #090d16;
+      color: #38bdf8;
+      font-family: monospace;
+      padding: 10px;
+      border: 1px solid var(--border-color);
+      border-radius: 4px;
+      box-sizing: border-box;
+    }
+
+    .btn-row {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .btn-secondary {
+      background: #334155;
+      width: auto;
+      padding: 8px 16px;
+    }
+    .btn-secondary:hover { background: #475569; }
+  </style>
+</head>
+<body>
+
+  <h1>Quant Trading & Strategy Modeling Suite</h1>
+
+  <!-- PART 1: DATA ACQUISITION & PRICE CHART -->
+  <div class="section-card">
+    <h2>Part 1: Market Data Acquisition & Price Chart with Execution Markers</h2>
+    <div class="grid-form">
+      <div>
+        <label>Ticker Symbol</label>
+        <input type="text" id="symbolInput" value="AAPL">
+      </div>
+      <div>
+        <label>Timeframe</label>
+        <select id="timeframeInput">
+          <option value="1d">Daily (1d)</option>
+          <option value="1h">Hourly (1h)</option>
+          <option value="15m">15-Minute (15m)</option>
+        </select>
+      </div>
+      <div>
+        <label>Actions</label>
+        <button id="fetchBtn">Fetch Data</button>
+      </div>
+      <div>
+        <label>Load Local File (from ./data)</label>
+        <input type="file" id="localFileInput" accept=".json">
+      </div>
+    </div>
+    <div id="dataStatus" style="font-size: 0.85rem; color: var(--accent-green); margin-bottom: 8px;"></div>
+    
+    <div class="chart-container">
+      <canvas id="mainPriceChart"></canvas>
+    </div>
+  </div>
+
+  <!-- PART 2: TARGETED INDICATOR SELECTION & MATRIX INVESTIGATION -->
+  <div class="section-card">
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+      <div>
+        <h2>Part 2: Targeted Indicator & Feature Investigation</h2>
+        <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: -4px;">
+          Select specific quantitative features across 4 categories to test parameter surface against market returns.
+        </p>
+      </div>
+      <div class="btn-row">
+        <button id="btnSelectAll" class="btn-secondary">Select All</button>
+        <button id="btnClearAll" class="btn-secondary">Clear All</button>
+        <button id="btnRunDiscovery" style="width: auto; padding: 10px 20px; background: #16a34a;">
+          Investigate Selected Features
+        </button>
+      </div>
+    </div>
+
+    <!-- 4-Column Indicator Selection Interface -->
+    <div class="indicator-columns">
+      
+      <!-- Col 1: Trend & Momentum -->
+      <div class="ind-col">
+        <div class="ind-col-header">
+          <h3 style="color: var(--accent-green);">1. Trend & Momentum</h3>
+          <input type="checkbox" class="cat-checkbox" data-category="trend">
+        </div>
+        <p style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 10px;">Directional velocity & trend filters.</p>
+        <div class="ind-list">
+          <label class="ind-item">
+            <span>SMA / EMA Crossover</span>
+            <input type="checkbox" value="sma_ema" class="ind-checkbox" data-category="trend" checked>
+          </label>
+          <label class="ind-item">
+            <span>MACD (Line & Histogram)</span>
+            <input type="checkbox" value="macd" class="ind-checkbox" data-category="trend">
+          </label>
+          <label class="ind-item">
+            <span>ADX (Trend Strength)</span>
+            <input type="checkbox" value="adx" class="ind-checkbox" data-category="trend">
+          </label>
+          <label class="ind-item">
+            <span>RSI Momentum Filter</span>
+            <input type="checkbox" value="rsi" class="ind-checkbox" data-category="trend" checked>
+          </label>
+        </div>
+      </div>
+
+      <!-- Col 2: Mean Reversion & Volatility -->
+      <div class="ind-col">
+        <div class="ind-col-header">
+          <h3 style="color: var(--accent-blue);">2. Mean Reversion & Vol</h3>
+          <input type="checkbox" class="cat-checkbox" data-category="reversion">
+        </div>
+        <p style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 10px;">Statistical channels & volatility limits.</p>
+        <div class="ind-list">
+          <label class="ind-item">
+            <span>Bollinger Bands</span>
+            <input type="checkbox" value="bollinger" class="ind-checkbox" data-category="reversion" checked>
+          </label>
+          <label class="ind-item">
+            <span>Average True Range (ATR)</span>
+            <input type="checkbox" value="atr" class="ind-checkbox" data-category="reversion">
+          </label>
+          <label class="ind-item">
+            <span>Price Z-Score Spread</span>
+            <input type="checkbox" value="zscore" class="ind-checkbox" data-category="reversion">
+          </label>
+          <label class="ind-item">
+            <span>Keltner Channels</span>
+            <input type="checkbox" value="keltner" class="ind-checkbox" data-category="reversion">
+          </label>
+        </div>
+      </div>
+
+      <!-- Col 3: Microstructure & Volume Dynamics -->
+      <div class="ind-col">
+        <div class="ind-col-header">
+          <h3 style="color: var(--accent-purple);">3. Microstructure & Vol</h3>
+          <input type="checkbox" class="cat-checkbox" data-category="volume">
+        </div>
+        <p style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 10px;">Order flow & volume accumulation.</p>
+        <div class="ind-list">
+          <label class="ind-item">
+            <span>VWAP Deviation</span>
+            <input type="checkbox" value="vwap" class="ind-checkbox" data-category="volume" checked>
+          </label>
+          <label class="ind-item">
+            <span>On-Balance Volume (OBV)</span>
+            <input type="checkbox" value="obv" class="ind-checkbox" data-category="volume">
+          </label>
+          <label class="ind-item">
+            <span>Volume Z-Score Anomaly</span>
+            <input type="checkbox" value="vol_zscore" class="ind-checkbox" data-category="volume">
+          </label>
+          <label class="ind-item">
+            <span>Chaikin Money Flow (CMF)</span>
+            <input type="checkbox" value="cmf" class="ind-checkbox" data-category="volume">
+          </label>
+        </div>
+      </div>
+
+      <!-- Col 4: Advanced Statistical Factors -->
+      <div class="ind-col">
+        <div class="ind-col-header">
+          <h3 style="color: var(--accent-amber);">4. Advanced Factors</h3>
+          <input type="checkbox" class="cat-checkbox" data-category="advanced">
+        </div>
+        <p style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 10px;">Digital signal processing & regime tests.</p>
+        <div class="ind-list">
+          <label class="ind-item">
+            <span>Hurst Exponent (Regime)</span>
+            <input type="checkbox" value="hurst" class="ind-checkbox" data-category="advanced" checked>
+          </label>
+          <label class="ind-item">
+            <span>Kalman Adaptive Filter</span>
+            <input type="checkbox" value="kalman" class="ind-checkbox" data-category="advanced">
+          </label>
+          <label class="ind-item">
+            <span>ADF Stationarity Test</span>
+            <input type="checkbox" value="adf" class="ind-checkbox" data-category="advanced">
+          </label>
+          <label class="ind-item">
+            <span>Autocorrelation (Lag-1)</span>
+            <input type="checkbox" value="autocorr" class="ind-checkbox" data-category="advanced">
+          </label>
+        </div>
+      </div>
+
+    </div>
+
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+      <div id="discoveryStatus" style="font-size: 0.85rem; color: var(--accent-blue);"></div>
+      <div id="selectedCountTag" style="font-size: 0.75rem; color: var(--text-muted); background: var(--card-inner); padding: 4px 8px; border-radius: 4px;">
+        4 indicators selected
+      </div>
+    </div>
+
+    <!-- Candidate Matrix Table -->
+    <table>
+      <thead>
+        <tr>
+          <th>Queue</th>
+          <th>Strategy Model</th>
+          <th>Indicators Used</th>
+          <th>Buy / Sell Rules</th>
+          <th>Sharpe</th>
+          <th>Deflated Sharpe</th>
+          <th>Optimality Type</th>
+        </tr>
+      </thead>
+      <tbody id="candidateTableBody">
+        <tr><td colspan="7" style="text-align:center; color: var(--text-muted);">Select indicators and run investigation to populate candidates.</td></tr>
+      </tbody>
+    </table>
+
+    <button id="btnSendToPart3" style="margin-top: 12px; background: #0284c7;">Queue Selected Strategies for Part 3 Validation ➔</button>
+  </div>
+
+  <!-- PART 3: BACKTEST ENGINE & RISK PARAMETERS -->
+  <div class="section-card" id="part3-container">
+    <h2>Part 3: Backtest Engine & Risk Parameters</h2>
+
+    <div class="grid-form">
+      <div>
+        <label>Initial Capital ($)</label>
+        <input type="number" id="initCapital" value="10000">
+      </div>
+      <div>
+        <label>Fixed Fee ($/trade)</label>
+        <input type="number" step="0.5" id="fixedFee" value="1.00">
+      </div>
+      <div>
+        <label>Percentage Fee (%)</label>
+        <input type="number" step="0.01" id="pctFee" value="0.10">
+      </div>
+      <div>
+        <label>Slippage (%)</label>
+        <input type="number" step="0.01" id="slippagePct" value="0.05">
+      </div>
+      <div>
+        <label>Stop Loss (%)</label>
+        <input type="number" step="0.1" id="stopLossPct" value="2.0">
+      </div>
+      <div>
+        <label>Take Profit (%)</label>
+        <input type="number" step="0.1" id="takeProfitPct" value="5.0">
+      </div>
+      <div>
+        <label>In-Sample Split (%)</label>
+        <input type="number" id="inSamplePct" value="70">
+      </div>
+      <div>
+        <label>Evaluation Mode</label>
+        <select id="evalModeSelect">
+          <option value="ensemble">Ensemble Weighted Mix</option>
+          <option value="individual">Individual Strategy Focus</option>
+        </select>
+      </div>
+    </div>
+
+    <div id="individualStratSelectorContainer" style="display:none; margin-bottom: 12px;">
+      <label>Focus Strategy:</label>
+      <select id="individualStratSelect"></select>
+    </div>
+
+    <button id="btnRunBacktest" style="width: auto; padding: 10px 24px;">Run Validation Backtest</button>
+
+    <div class="chart-container">
+      <canvas id="portfolioChart"></canvas>
+    </div>
+  </div>
+
+  <!-- DUAL CODE EXPORT -->
+  <div class="section-card">
+    <h2>Dual Strategy Code Export</h2>
+    <div class="code-grid">
+      <div>
+        <label style="color: var(--accent-blue); font-weight: bold;">TradingView (PineScript v5)</label>
+        <textarea id="tradingviewCodeOutput" readonly></textarea>
+      </div>
+      <div>
+        <label style="color: var(--accent-green); font-weight: bold;">Moomoo (Python Open API)</label>
+        <textarea id="moomooCodeOutput" readonly></textarea>
+      </div>
+    </div>
+  </div>
+
+  <script src="app_2.js"></script>
+</body>
+</html>
