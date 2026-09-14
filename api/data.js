@@ -1,15 +1,7 @@
 import yahooFinance from 'yahoo-finance2';
 
-// Set global headers properly under fetchOptions for v3
-yahooFinance.setGlobalConfig({
-  fetchOptions: {
-    headers: {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-    }
-  }
-});
-
 export default async function handler(req, res) {
+  // CORS Headers
   res.setHeader('Access-Control-Allow-Credentials', true);
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS');
@@ -18,7 +10,7 @@ export default async function handler(req, res) {
     'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version'
   );
 
-  // Cache on Vercel Edge CDN for 1 hour to stay under rate limits
+  // Enable Vercel Edge Caching (1 hour) to avoid hitting Yahoo rate limits
   res.setHeader('Cache-Control', 's-maxage=3600, stale-while-revalidate=86400');
 
   if (req.method === 'OPTIONS') {
@@ -38,7 +30,16 @@ export default async function handler(req, res) {
       interval: timeframe
     };
 
-    const result = await yahooFinance.historical(symbol, queryOptions);
+    // Pass custom fetch headers directly in moduleOptions to prevent global config merge crashes
+    const moduleOptions = {
+      fetchOptions: {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        }
+      }
+    };
+
+    const result = await yahooFinance.historical(symbol, queryOptions, moduleOptions);
 
     if (!result || result.length === 0) {
       return res.status(404).json({ error: `No historical data found for symbol: ${symbol}` });
@@ -58,10 +59,10 @@ export default async function handler(req, res) {
     return res.status(200).json(formattedData);
   } catch (error) {
     console.error('Yahoo Finance Fetch Error:', error);
-    
+
     if (error.message && error.message.includes('Too Many Requests')) {
       return res.status(429).json({
-        error: 'Rate limit hit on Yahoo Finance. Please try again shortly.',
+        error: 'Rate limit hit on Yahoo Finance. Please wait a moment and try again.',
         details: error.message
       });
     }
