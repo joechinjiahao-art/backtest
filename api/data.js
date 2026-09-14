@@ -1,10 +1,7 @@
-import { YahooFinance } from 'yahoo-finance2';
-
-// Instantiate the YahooFinance client
-const yahooFinance = new YahooFinance();
+import yahooFinance from 'yahoo-finance2';
 
 export default async function handler(req, res) {
-  // CORS Headers
+  // Set CORS headers to allow frontend requests
   res.setHeader('Access-Control-Allow-Credentials', true);
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS');
@@ -13,15 +10,18 @@ export default async function handler(req, res) {
     'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version'
   );
 
+  // Handle browser preflight checks
   if (req.method === 'OPTIONS') {
     res.status(200).end();
     return;
   }
 
+  // Parse query parameters
   const symbol = (req.query.symbol || 'AAPL').toUpperCase().trim();
   const timeframe = req.query.timeframe || '1d';
 
   try {
+    // Fetch 1 year of historical data
     const startDate = new Date();
     startDate.setFullYear(startDate.getFullYear() - 1);
 
@@ -30,13 +30,14 @@ export default async function handler(req, res) {
       interval: timeframe
     };
 
-    // Call historical method on the instantiated yahooFinance object
+    // Execute query using yahoo-finance2 default import
     const result = await yahooFinance.historical(symbol, queryOptions);
 
     if (!result || result.length === 0) {
       return res.status(404).json({ error: `No historical data found for symbol: ${symbol}` });
     }
 
+    // Format output array for app_2.js
     const formattedData = result
       .filter(bar => bar.close !== null && bar.close !== undefined)
       .map(bar => ({
