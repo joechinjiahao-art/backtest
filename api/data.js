@@ -1,7 +1,10 @@
-import yahooFinance from 'yahoo-finance2';
+import { YahooFinance } from 'yahoo-finance2';
+
+// Instantiate the YahooFinance client
+const yahooFinance = new YahooFinance();
 
 export default async function handler(req, res) {
-  // CORS Headers (Allows your frontend to call this endpoint without cross-origin issues)
+  // CORS Headers
   res.setHeader('Access-Control-Allow-Credentials', true);
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS');
@@ -15,12 +18,10 @@ export default async function handler(req, res) {
     return;
   }
 
-  // Parse query parameters from frontend request
   const symbol = (req.query.symbol || 'AAPL').toUpperCase().trim();
-  const timeframe = req.query.timeframe || '1d'; // '1d', '1wk', or '1mo'
+  const timeframe = req.query.timeframe || '1d';
 
   try {
-    // Calculate start date (1 year back by default)
     const startDate = new Date();
     startDate.setFullYear(startDate.getFullYear() - 1);
 
@@ -29,14 +30,13 @@ export default async function handler(req, res) {
       interval: timeframe
     };
 
-    // Fetch historical data from Yahoo Finance API
+    // Call historical method on the instantiated yahooFinance object
     const result = await yahooFinance.historical(symbol, queryOptions);
 
     if (!result || result.length === 0) {
-      return res.status(444).json({ error: `No historical data found for symbol: ${symbol}` });
+      return res.status(404).json({ error: `No historical data found for symbol: ${symbol}` });
     }
 
-    // Format bars to match the structure expected by app_2.js
     const formattedData = result
       .filter(bar => bar.close !== null && bar.close !== undefined)
       .map(bar => ({
