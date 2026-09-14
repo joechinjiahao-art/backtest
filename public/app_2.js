@@ -13,12 +13,33 @@ document.addEventListener('DOMContentLoaded', () => {
   loadCachedData();
 });
 
+// Helper: Formats ticker for Moomoo API (e.g. AAPL -> US.AAPL)
+function formatMoomooSymbol(rawSymbol) {
+  if (!rawSymbol) return 'US.AAPL';
+  const clean = rawSymbol.toUpperCase().trim();
+  if (clean.startsWith('US.') || clean.startsWith('HK.') || clean.startsWith('SH.') || clean.startsWith('SZ.')) {
+    return clean;
+  }
+  return `US.${clean}`;
+}
+
 // -------------------------------------------------------------
 // PART 1: DATA ACQUISITION & ENHANCED PRICE CHART WITH TRADES
 // -------------------------------------------------------------
 function initPart1() {
   document.getElementById('fetchBtn')?.addEventListener('click', handleFetchData);
   document.getElementById('localFileInput')?.addEventListener('change', handleLocalFileUpload);
+  
+  // Real-time update for export boxes on symbol change
+  document.getElementById('symbolInput')?.addEventListener('input', () => {
+    if (activeValidationStrategies.length > 0) {
+      const initCapital = parseFloat(document.getElementById('initCapital')?.value) || 10000;
+      const fixedFee = parseFloat(document.getElementById('fixedFee')?.value) || 0;
+      const pctFee = (parseFloat(document.getElementById('pctFee')?.value) || 0) / 100;
+      const slippage = (parseFloat(document.getElementById('slippagePct')?.value) || 0) / 100;
+      generateDualCodeExports(activeValidationStrategies[0], initCapital, fixedFee, pctFee, slippage);
+    }
+  });
 }
 
 async function handleFetchData() {
@@ -30,16 +51,25 @@ async function handleFetchData() {
   statusEl.innerText = 'Fetching market data...';
 
   try {
-    const res = await fetch(`/api/data?symbol=${encodeURIComponent(symbol)}&timeframe=${timeframe}`);
+    const res = await fetch(`/api/data.js?symbol=${encodeURIComponent(symbol)}&timeframe=${timeframe}`);
     if (!res.ok) throw new Error(`HTTP Error ${res.status}`);
     
     const data = await res.json();
     if (!Array.isArray(data) || data.length === 0) throw new Error('Invalid or empty data payload.');
 
-    marketData = data;
+    // Ensure strict numeric casting on price values
+    marketData = data.map(bar => ({
+      date: bar.date,
+      open: parseFloat(bar.open),
+      high: parseFloat(bar.high),
+      low: parseFloat(bar.low),
+      close: parseFloat(bar.close),
+      volume: parseInt(bar.volume, 10) || 1
+    }));
+
     autoSaveData(marketData);
 
-    statusEl.innerText = `Successfully loaded & saved ${marketData.length} bars for ${symbol}.`;
+    statusEl.innerText = `Successfully loaded & saved ${marketData.length} bars for ${symbol.toUpperCase()}.`;
     renderMainChart(marketData);
   } catch (err) {
     statusEl.innerText = `Error: ${err.message}`;
@@ -57,7 +87,15 @@ function handleLocalFileUpload(e) {
       const parsed = JSON.parse(event.target.result);
       if (!Array.isArray(parsed) || parsed.length === 0) throw new Error('File content must be a non-empty JSON array of bars.');
       
-      marketData = parsed;
+      marketData = parsed.map(bar => ({
+        date: bar.date,
+        open: parseFloat(bar.open),
+        high: parseFloat(bar.high),
+        low: parseFloat(bar.low),
+        close: parseFloat(bar.close),
+        volume: parseInt(bar.volume, 10) || 1
+      }));
+
       autoSaveData(marketData);
 
       const statusEl = document.getElementById('dataStatus');
@@ -83,10 +121,21 @@ function loadCachedData() {
   const cached = localStorage.getItem(STORAGE_KEY);
   if (cached) {
     try {
-      marketData = JSON.parse(cached);
+      const parsed = JSON.parse(cached);
+      marketData = parsed.map(bar => ({
+        date: bar.date,
+        open: parseFloat(bar.open),
+        high: parseFloat(bar.high),
+        low: parseFloat(bar.low),
+        close: parseFloat(bar.close),
+        volume: parseInt(bar.volume, 10) || 1
+      }));
+
       const statusEl = document.getElementById('dataStatus');
-      statusEl.style.display = 'inline-block';
-      statusEl.innerText = `Restored ${marketData.length} bars from auto-save cache.`;
+      if (statusEl) {
+        statusEl.style.display = 'inline-block';
+        statusEl.innerText = `Restored ${marketData.length} bars from auto-save cache.`;
+      }
       renderMainChart(marketData);
     } catch (e) {
       console.error('Failed to parse cached data:', e);
@@ -229,11 +278,11 @@ function runTargetedInvestigation() {
   setTimeout(() => {
     discoveredCandidates = [];
     
-    // 1. Calculate Feature Series for all selected indicators
+    // 1. Calculate Feature Series
     const featureMap = computeFeatureMatrix(marketData, selectedIndicators);
     const featureKeys = Object.keys(featureMap);
 
-    // 2. Evaluate Intra-Indicator Strategies (Single Column Parameter Sweep)
+    // 2. Intra-Indicator Strategies
     if (selectedIndicators.includes('sma_ema')) {
       const closes = marketData.map(d => d.close);
       for (let fast = 5; fast <= 25; fast += 10) {
@@ -257,7 +306,7 @@ function runTargetedInvestigation() {
       }
     }
 
-    // 3. Evaluate Cross-Column Pair Combinations
+    // 3. Cross-Column Combinations
     for (let i = 0; i < featureKeys.length; i++) {
       for (let j = i + 1; j < featureKeys.length; j++) {
         const keyA = featureKeys[i];
@@ -266,7 +315,6 @@ function runTargetedInvestigation() {
         const featA = featureMap[keyA];
         const featB = featureMap[keyB];
 
-        // Strategy Matrix A: Crossover Pair Strategy (A crosses B)
         const crossMetrics = evaluateCrossPairStrategy(marketData, featA.data, featB.data, 'crossover');
         if (crossMetrics.sharpe > 0.35) {
           discoveredCandidates.push({
@@ -282,7 +330,6 @@ function runTargetedInvestigation() {
           });
         }
 
-        // Strategy Matrix B: Threshold Dual Confirmation (A > 0 AND B > 0)
         const confirmMetrics = evaluateCrossPairStrategy(marketData, featA.data, featB.data, 'confirmation');
         if (confirmMetrics.sharpe > 0.4) {
           discoveredCandidates.push({
@@ -300,7 +347,6 @@ function runTargetedInvestigation() {
       }
     }
 
-    // Fallback if no strategy exceeds Sharpe threshold
     if (discoveredCandidates.length === 0) {
       const closes = marketData.map(d => d.close);
       const metrics = evaluateSimpleStrategy(closes, 'SMA', 'SMA', 10, 40);
@@ -327,7 +373,6 @@ function runTargetedInvestigation() {
   }, 100);
 }
 
-// Pre-computes numerical arrays for checked features
 function computeFeatureMatrix(data, selectedKeys) {
   const closes = data.map(d => d.close);
   const volumes = data.map(d => d.volume || 1);
@@ -353,7 +398,6 @@ function computeFeatureMatrix(data, selectedKeys) {
   return matrix;
 }
 
-// Dynamic Evaluator for Cross-Column Strategies
 function evaluateCrossPairStrategy(data, seriesA, seriesB, mode = 'crossover') {
   const closes = data.map(d => d.close);
   let capital = 10000;
@@ -389,7 +433,6 @@ function evaluateCrossPairStrategy(data, seriesA, seriesB, mode = 'crossover') {
     returns.push((val - 10000) / 10000);
   }
 
-  const finalVal = capital + (shares * closes[closes.length - 1]);
   const avgRet = returns.reduce((a, b) => a + b, 0) / (returns.length || 1);
   const stdDev = Math.sqrt(returns.reduce((a, b) => a + Math.pow(b - avgRet, 2), 0) / (returns.length || 1));
   const sharpe = stdDev > 0 ? parseFloat(((avgRet / stdDev) * Math.sqrt(252)).toFixed(2)) : 0;
@@ -684,7 +727,6 @@ function evaluateSimpleStrategy(closes, typeA, typeB, fast, slow) {
     returns.push((val - 10000) / 10000);
   }
 
-  const finalVal = capital + (shares * closes[closes.length - 1]);
   const avgRet = returns.reduce((a, b) => a + b, 0) / returns.length;
   const stdDev = Math.sqrt(returns.reduce((a, b) => a + Math.pow(b - avgRet, 2), 0) / returns.length);
   const sharpe = stdDev > 0 ? parseFloat(((avgRet / stdDev) * Math.sqrt(252)).toFixed(2)) : 0;
@@ -779,10 +821,15 @@ function calcOBV(prices, volumes) {
 function generateDualCodeExports(strat, capital, fixedFee, pctFee, slippage) {
   if (!strat) return;
 
-  const pineScript = `//@version=5
-strategy("${strat.type} [Quant Engine]", overlay=true, initial_capital=${capital}, default_qty_type=strategy.percent_of_equity, default_qty_value=100)
+  const rawSymbol = document.getElementById('symbolInput')?.value.trim() || 'AAPL';
+  const cleanSymbol = rawSymbol.toUpperCase();
+  const moomooTicker = formatMoomooSymbol(cleanSymbol);
 
-// ${strat.indicators}
+  const pineScript = `//@version=5
+strategy("${strat.type} [${cleanSymbol}]", overlay=true, initial_capital=${capital}, default_qty_type=strategy.percent_of_equity, default_qty_value=100)
+
+// Active Symbol: ${cleanSymbol}
+// Strategy Features: ${strat.indicators}
 // Buy Rule: ${strat.buyRules}
 // Sell Rule: ${strat.sellRules}
 
@@ -802,12 +849,12 @@ import pandas as pd
 quote_ctx = OpenQuoteContext(host='127.0.0.1', port=11111)
 trd_ctx = OpenSecTradeContext(filter_firm_id=1, host='127.0.0.1', port=11111)
 
-SYMBOL = "US.AAPL"
+SYMBOL = "${moomooTicker}"
 
 def execute_strategy():
     ret, data = quote_ctx.get_cur_kline(SYMBOL, 100, KLType.K_DAY)
     if ret != RET_OK:
-        print("Failed to fetch Kline data:", data)
+        print("Failed to fetch Kline data for", SYMBOL, ":", data)
         return
 
     # Signal Rules for ${strat.type}
@@ -818,6 +865,9 @@ execute_strategy()
 quote_ctx.close()
 trd_ctx.close()`;
 
-  document.getElementById('tradingviewCodeOutput').value = pineScript;
-  document.getElementById('moomooCodeOutput').value = moomooPython;
+  const tvEl = document.getElementById('tradingviewCodeOutput');
+  const mmEl = document.getElementById('moomooCodeOutput');
+
+  if (tvEl) tvEl.value = pineScript;
+  if (mmEl) mmEl.value = moomooPython;
 }
