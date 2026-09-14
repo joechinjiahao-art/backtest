@@ -1,9 +1,11 @@
 import yahooFinance from 'yahoo-finance2';
 
-// Bypasses generic scraper blocking
+// Set global headers properly under fetchOptions for v3
 yahooFinance.setGlobalConfig({
-  headers: {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+  fetchOptions: {
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    }
   }
 });
 
@@ -16,7 +18,7 @@ export default async function handler(req, res) {
     'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version'
   );
 
-  // Enable Vercel Edge Caching to prevent hitting Yahoo rate limits
+  // Cache on Vercel Edge CDN for 1 hour to stay under rate limits
   res.setHeader('Cache-Control', 's-maxage=3600, stale-while-revalidate=86400');
 
   if (req.method === 'OPTIONS') {
@@ -32,7 +34,7 @@ export default async function handler(req, res) {
     startDate.setFullYear(startDate.getFullYear() - 1);
 
     const queryOptions = {
-      period1: startDate.toISOString().split('T')[0],
+      period1: startDate,
       interval: timeframe
     };
 
@@ -45,7 +47,7 @@ export default async function handler(req, res) {
     const formattedData = result
       .filter(bar => bar.close !== null && bar.close !== undefined)
       .map(bar => ({
-        date: bar.date.toISOString().split('T')[0],
+        date: new Date(bar.date).toISOString().split('T')[0],
         open: parseFloat(bar.open.toFixed(2)),
         high: parseFloat(bar.high.toFixed(2)),
         low: parseFloat(bar.low.toFixed(2)),
@@ -57,10 +59,9 @@ export default async function handler(req, res) {
   } catch (error) {
     console.error('Yahoo Finance Fetch Error:', error);
     
-    // Friendly error check for rate limits
     if (error.message && error.message.includes('Too Many Requests')) {
       return res.status(429).json({
-        error: 'Rate limit hit on Yahoo Finance. Please wait a minute and try again.',
+        error: 'Rate limit hit on Yahoo Finance. Please try again shortly.',
         details: error.message
       });
     }
