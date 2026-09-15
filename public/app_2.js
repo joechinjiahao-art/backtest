@@ -52,7 +52,10 @@ async function handleFetchData() {
 
   try {
     const res = await fetch(`/api/data.js?symbol=${encodeURIComponent(symbol)}&timeframe=${timeframe}`);
-    if (!res.ok) throw new Error(`HTTP Error ${res.status}`);
+    if (!res.ok) {
+      const errJson = await res.json().catch(() => ({}));
+      throw new Error(errJson.error || `HTTP Error ${res.status}`);
+    }
     
     const data = await res.json();
     if (!Array.isArray(data) || data.length === 0) throw new Error('Invalid or empty data payload.');
@@ -85,22 +88,54 @@ function handleLocalFileUpload(e) {
   reader.onload = function(event) {
     try {
       const parsed = JSON.parse(event.target.result);
-      if (!Array.isArray(parsed) || parsed.length === 0) throw new Error('File content must be a non-empty JSON array of bars.');
-      
-      marketData = parsed.map(bar => ({
-        date: bar.date,
-        open: parseFloat(bar.open),
-        high: parseFloat(bar.high),
-        low: parseFloat(bar.low),
-        close: parseFloat(bar.close),
-        volume: parseInt(bar.volume, 10) || 1
-      }));
+      let rawBars = [];
+
+      // Case 1: Raw Yahoo Finance v8 Chart API JSON format
+      if (parsed?.chart?.result?.[0]) {
+        const result = parsed.chart.result[0];
+        const timestamps = result.timestamp || [];
+        const quote = result.indicators?.quote?.[0] || {};
+
+        rawBars = timestamps.map((ts, idx) => ({
+          date: new Date(ts * 1000).toISOString().split('T')[0],
+          open: quote.open?.[idx],
+          high: quote.high?.[idx],
+          low: quote.low?.[idx],
+          close: quote.close?.[idx],
+          volume: quote.volume?.[idx] || 0
+        }));
+      } 
+      // Case 2: Standard flat array of bar objects
+      else if (Array.isArray(parsed)) {
+        rawBars = parsed;
+      } 
+      else {
+        throw new Error('Unrecognized JSON structure.');
+      }
+
+      // Filter out null/invalid price records & strictly type numbers
+      marketData = rawBars
+        .filter(bar => bar && bar.close !== null && bar.open !== null && !isNaN(bar.close))
+        .map(bar => ({
+          date: bar.date,
+          open: parseFloat(bar.open),
+          high: parseFloat(bar.high),
+          low: parseFloat(bar.low),
+          close: parseFloat(bar.close),
+          volume: parseInt(bar.volume, 10) || 1
+        }));
+
+      if (marketData.length === 0) {
+        throw new Error('No valid price bars found in the file.');
+      }
 
       autoSaveData(marketData);
 
       const statusEl = document.getElementById('dataStatus');
-      statusEl.style.display = 'inline-block';
-      statusEl.innerText = `Loaded ${marketData.length} records from file: ${file.name}`;
+      if (statusEl) {
+        statusEl.style.display = 'inline-block';
+        statusEl.innerText = `Loaded ${marketData.length} records from file: ${file.name}`;
+      }
       renderMainChart(marketData);
     } catch (err) {
       alert(`Failed to parse local file: ${err.message}`);
