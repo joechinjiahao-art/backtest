@@ -1,9 +1,9 @@
 import yahooFinance from 'yahoo-finance2';
 
-// Silence internal Node deprecation warnings if needed
+// Silence internal Node deprecation warnings
 process.noDeprecation = true;
 
-// Disable global strict schema validation to prevent crashing on partial nulls
+// Disable strict global schema validation to prevent crashing on partial nulls from Yahoo
 yahooFinance.setGlobalConfig({
   validation: {
     logErrors: false,
@@ -26,9 +26,10 @@ export default async function handler(req, res) {
   }
 
   const { symbol = 'AAPL', timeframe = '1d' } = req.query;
+  const cleanSymbol = symbol.trim().toUpperCase();
 
   try {
-    // Standard 2-year lookback period for backtesting
+    // 2-year backtest window
     const endDate = new Date();
     const startDate = new Date();
     startDate.setFullYear(endDate.getFullYear() - 2);
@@ -39,18 +40,18 @@ export default async function handler(req, res) {
       interval: timeframe === '1d' ? '1d' : timeframe === '1w' ? '1wk' : '1d',
     };
 
-    // Pass { validateResult: false } as the 3rd argument to suppress partial-null throws
+    // { validateResult: false } suppresses partial-null throws
     const rawData = await yahooFinance.historical(
-      symbol.trim().toUpperCase(),
+      cleanSymbol,
       queryOptions,
       { validateResult: false }
     );
 
     if (!Array.isArray(rawData) || rawData.length === 0) {
-      return res.status(400).json({ error: `No historical market data found for symbol: ${symbol}` });
+      return res.status(400).json({ error: `No historical market data found for symbol: ${cleanSymbol}` });
     }
 
-    // Filter out corrupted/null records and map into strictly-typed numbers
+    // Filter out corrupted/null records and map into strictly typed numbers
     const cleanData = rawData
       .filter(
         (bar) =>
@@ -72,7 +73,15 @@ export default async function handler(req, res) {
 
     return res.status(200).json(cleanData);
   } catch (error) {
-    console.error(`Yahoo Finance Fetch Error [Symbol: ${symbol}]:`, error);
+    console.error(`Yahoo Finance Fetch Error [Symbol: ${cleanSymbol}]:`, error);
+
+    // Explicit handling for HTTP 429 Rate Limits / HTML response parsing errors
+    if (error.message?.includes('Too Many Requests') || error.message?.includes('Unexpected token')) {
+      return res.status(429).json({
+        error: 'Yahoo Finance rate limited this server IP. Please wait 1-2 minutes or use the local JSON/CSV upload option in Part 1.',
+      });
+    }
+
     return res.status(500).json({ error: error.message || 'Failed to fetch market data.' });
   }
 }
