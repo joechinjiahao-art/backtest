@@ -1,81 +1,78 @@
 import yahooFinance from 'yahoo-finance2';
-// Suppress strict null validation errors
+
+// Silence internal Node deprecation warnings if needed
+process.noDeprecation = true;
+
+// Disable global strict schema validation to prevent crashing on partial nulls
 yahooFinance.setGlobalConfig({
   validation: {
     logErrors: false,
-    // Prevents throwing on historical data with partial nulls
-  }
+  },
 });
+
 export default async function handler(req, res) {
   // CORS Headers
   res.setHeader('Access-Control-Allow-Credentials', true);
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
   res.setHeader(
     'Access-Control-Allow-Headers',
     'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version'
   );
-
-  // Enable Vercel Edge Caching (1 hour) to avoid hitting Yahoo rate limits
-  res.setHeader('Cache-Control', 's-maxage=3600, stale-while-revalidate=86400');
 
   if (req.method === 'OPTIONS') {
     res.status(200).end();
     return;
   }
 
-  const symbol = (req.query.symbol || 'AAPL').toUpperCase().trim();
-  const timeframe = req.query.timeframe || '1d';
+  const { symbol = 'AAPL', timeframe = '1d' } = req.query;
 
   try {
+    // Standard 2-year lookback period for backtesting
+    const endDate = new Date();
     const startDate = new Date();
-    startDate.setFullYear(startDate.getFullYear() - 1);
+    startDate.setFullYear(endDate.getFullYear() - 2);
 
     const queryOptions = {
-      period1: startDate,
-      interval: timeframe
+      period1: startDate.toISOString().split('T')[0],
+      period2: endDate.toISOString().split('T')[0],
+      interval: timeframe === '1d' ? '1d' : timeframe === '1w' ? '1wk' : '1d',
     };
 
-    // Pass custom fetch headers directly in moduleOptions to prevent global config merge crashes
-    const moduleOptions = {
-      fetchOptions: {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-        }
-      }
-    };
+    // Pass { validateResult: false } as the 3rd argument to suppress partial-null throws
+    const rawData = await yahooFinance.historical(
+      symbol.trim().toUpperCase(),
+      queryOptions,
+      { validateResult: false }
+    );
 
-    const result = await yahooFinance.historical(symbol, queryOptions, moduleOptions);
-
-    if (!result || result.length === 0) {
-      return res.status(404).json({ error: `No historical data found for symbol: ${symbol}` });
+    if (!Array.isArray(rawData) || rawData.length === 0) {
+      return res.status(400).json({ error: `No historical market data found for symbol: ${symbol}` });
     }
 
-    const formattedData = result
-      .filter(bar => bar.close !== null && bar.close !== undefined)
-      .map(bar => ({
-        date: new Date(bar.date).toISOString().split('T')[0],
-        open: parseFloat(bar.open.toFixed(2)),
-        high: parseFloat(bar.high.toFixed(2)),
-        low: parseFloat(bar.low.toFixed(2)),
-        close: parseFloat(bar.close.toFixed(2)),
-        volume: bar.volume || 0
+    // Filter out corrupted/null records and map into strictly-typed numbers
+    const cleanData = rawData
+      .filter(
+        (bar) =>
+          bar &&
+          bar.date &&
+          bar.close !== null &&
+          bar.open !== null &&
+          bar.high !== null &&
+          bar.low !== null
+      )
+      .map((bar) => ({
+        date: bar.date instanceof Date ? bar.date.toISOString() : bar.date,
+        open: parseFloat(bar.open),
+        high: parseFloat(bar.high),
+        low: parseFloat(bar.low),
+        close: parseFloat(bar.close),
+        volume: parseInt(bar.volume, 10) || 0,
       }));
 
-    return res.status(200).json(formattedData);
+    return res.status(200).json(cleanData);
   } catch (error) {
-    console.error('Yahoo Finance Fetch Error:', error);
-
-    if (error.message && error.message.includes('Too Many Requests')) {
-      return res.status(429).json({
-        error: 'Rate limit hit on Yahoo Finance. Please wait a moment and try again.',
-        details: error.message
-      });
-    }
-
-    return res.status(500).json({
-      error: 'Failed to fetch market data from provider',
-      details: error.message
-    });
+    console.error(`Yahoo Finance Fetch Error [Symbol: ${symbol}]:`, error);
+    return res.status(500).json({ error: error.message || 'Failed to fetch market data.' });
   }
 }
