@@ -1,5 +1,11 @@
 import yahooFinance from 'yahoo-finance2';
-
+// Suppress strict null validation errors
+yahooFinance.setGlobalConfig({
+  validation: {
+    logErrors: false,
+    // Prevents throwing on historical data with partial nulls
+  }
+});
 export default async function handler(req, res) {
   // CORS Headers
   res.setHeader('Access-Control-Allow-Credentials', true);
